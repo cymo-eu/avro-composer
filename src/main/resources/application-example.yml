@@ -1,0 +1,26 @@
+composer:
+  topics:
+    input: input
+    output: output
+  composition:
+    name: OrderEvent
+    namespace: eu.cymo.kafkaSerializationEvolution.event
+    documentation: documentation
+    subject: output-value
+    
+server:
+  port: 8082
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:19092
+    streams:
+      application-id: avro-composer
+      auto.offset.reset: earliest
+      properties:
+        # kafka
+        processing.guarantee: exactly_once_v2
+        # schema registry
+        schema.registry.url: http://localhost:18081
+        # serdes
+        value.subject.name.strategy: io.confluent.kafka.serializers.subject.TopicNameStrategy # default, here for verbosity
