@@ -30,7 +30,7 @@ public class StreamTopology {
         builder.stream(topics.getInput(),
                        Consumed.with(Serdes.Bytes(),
                                      avroSerdes.genericAvroValueSerde()))
-               .process(processors.composition())
+               .process(processors.compositionV2())
                .to(topics.getOutput(),
                    Produced.with(Serdes.Bytes(),
                                  avroSerdes.genericAvroValueSerde()));

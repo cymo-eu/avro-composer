@@ -54,7 +54,7 @@ class StreamTopologyTest {
         
         var avroSerdes = new MockAvroSerdeFactory(schemaRegistry);
         
-        var processors = new Processors(subjectAvroSchemaService, schemaVersionService, topics, composition);
+        var processors = new Processors(subjectAvroSchemaService, schemaVersionService, topics, composition, null);
         
         var builder = new StreamsBuilder();
         new StreamTopology(topics, avroSerdes, processors).configure(builder);
