@@ -1,0 +1,30 @@
+composer:
+  topics:
+    input: events.planning.instance-assignment
+    output: events.planning.instance-assignment.composed
+  composition:
+    name: InstanceAssignmentComposition
+    namespace: event.planning
+    documentation: 
+    subject: events.planning.instance-assignment.composed-value
+    
+server:
+  port: 8082
+
+spring:
+  kafka:
+    bootstrap-servers: pkc-z1o60.europe-west1.gcp.confluent.cloud:9092
+    streams:
+      application-id: avro-composer
+      auto.offset.reset: earliest
+      properties:
+        processing.guarantee: exactly_once_v2
+    properties:
+      # schema registry
+      schema.registry.url: https://psrc-yow81o.europe-west1.gcp.confluent.cloud
+      schema.registry.basic.auth.credentials.source: USER_INFO
+      schema.registry.basic.auth.user.info: "3CBS2U2HMESKJPXP:4VppMYo5G/vUmOrExmuclDH6OT2B8JzCVAl7DTdhzQ+Z2wzXvg67vNeSJx344WaC"
+      # kafka auth
+      sasl.mechanism: PLAIN
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username='HH7Z7LURBHGW5ODP' password='yoblOnozzFRL6xcZtIZtTX2EEXV3Pq6nB9ZE3wr2JU1lt7SUTscrmDUh57ozkxFI';
+      security.protocol: SASL_SSL

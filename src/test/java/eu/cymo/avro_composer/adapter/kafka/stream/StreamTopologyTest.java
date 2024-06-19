@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
+import eu.cymo.avro_composer.adapter.kafka.avro.SchemaVersionService;
 import eu.cymo.avro_composer.adapter.kafka.avro.SubjectAvroSchemaService;
 import eu.cymo.kafkaSerializationEvolution.event.OrderConfirmed;
 import eu.cymo.kafkaSerializationEvolution.event.OrderDelivered;
@@ -39,12 +40,13 @@ class StreamTopologyTest {
     void setup() { 
         schemaRegistry = MockSchemaRegistry.getClientForScope("test-scope");
         
-        var compositionConfig = new CompositionConfig();
-        compositionConfig.setName("Order");
-        compositionConfig.setNamespace("eu.cymo.kafkaSerializationEvolution.event");
-        compositionConfig.setSubject(subject);
+        var composition = new CompositionConfig();
+        composition.setName("Order");
+        composition.setNamespace("eu.cymo.kafkaSerializationEvolution.event");
+        composition.setSubject(subject);
         
-        var subjectAvroSchemaService = new SubjectAvroSchemaService(schemaRegistry, compositionConfig);
+        var subjectAvroSchemaService = new SubjectAvroSchemaService(schemaRegistry, composition);
+        var schemaVersionService = new SchemaVersionService(schemaRegistry);
         
         var topics = new TopicsConfig();
         topics.setInput("input");
@@ -52,7 +54,7 @@ class StreamTopologyTest {
         
         var avroSerdes = new MockAvroSerdeFactory(schemaRegistry);
         
-        var processors = new Processors(subjectAvroSchemaService, compositionConfig);
+        var processors = new Processors(subjectAvroSchemaService, schemaVersionService, topics, composition);
         
         var builder = new StreamsBuilder();
         new StreamTopology(topics, avroSerdes, processors).configure(builder);

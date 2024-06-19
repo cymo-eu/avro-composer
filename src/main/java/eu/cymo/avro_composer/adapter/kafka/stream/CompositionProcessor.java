@@ -9,23 +9,34 @@ import org.apache.kafka.streams.processor.api.Processor;
 import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
 
+import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
 import eu.cymo.avro_composer.adapter.kafka.avro.CompositionSchema;
 import eu.cymo.avro_composer.adapter.kafka.avro.FieldBuilder;
+import eu.cymo.avro_composer.adapter.kafka.avro.GenericRecordAdapter;
 import eu.cymo.avro_composer.adapter.kafka.avro.RegistrationException;
 import eu.cymo.avro_composer.adapter.kafka.avro.SchemaBuilder;
+import eu.cymo.avro_composer.adapter.kafka.avro.SchemaVersionService;
 import eu.cymo.avro_composer.adapter.kafka.avro.SubjectAvroSchemaService;
+import io.confluent.kafka.schemaregistry.avro.AvroSchema;
+import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 
 public class CompositionProcessor implements Processor<Bytes, GenericRecord, Bytes, GenericRecord> {
-    private final SubjectAvroSchemaService service;
-    private final CompositionConfig config;
+    private final SubjectAvroSchemaService schemaService;
+    private final SchemaVersionService versionService;
+    private final TopicsConfig topics;
+    private final CompositionConfig composition;
     
     private ProcessorContext<Bytes, GenericRecord> context;
     
     public CompositionProcessor(
-            SubjectAvroSchemaService service,
-            CompositionConfig config) {
-        this.service = service;
-        this.config = config;
+            SubjectAvroSchemaService schemaService,
+            SchemaVersionService versionService,
+            TopicsConfig topics,
+            CompositionConfig composition) {
+        this.schemaService = schemaService;
+        this.versionService = versionService;
+        this.topics = topics;
+        this.composition = composition;
     }
     
     @Override
@@ -38,7 +49,7 @@ public class CompositionProcessor implements Processor<Bytes, GenericRecord, Byt
         try {
             var value = record.value();
 
-            var newValue = service.getLatestSchema()
+            var newValue = schemaService.getLatestSchema()
                 .map(schema -> processExistingSchema(schema, value))
                 .orElseGet(() -> processNewSchema(value));
             
@@ -55,27 +66,69 @@ public class CompositionProcessor implements Processor<Bytes, GenericRecord, Byt
     }
     
     private GenericRecord processExistingSchema(CompositionSchema schema, GenericRecord value) {
-        if(schema.eventUnionContains(value.getSchema())) {
-            return composedGenericRecord(schema, value);
+        // if the existing schema has a matching schema in the event union,
+        // it's still possible we have a mismatch of versions
+        if(schema.eventUnionHasSchemaWithNameAndNamespace(value.getSchema())) {
+            // the schema version is the same, just continue
+            if(schema.eventUnionContains(value.getSchema())) {
+                return composedGenericRecord(schema, value);
+            }
+            // we have a version mismatch, we have to decide which version is newer
+            else {
+                
+                var newerSchema = getNewerVersionSafe(
+                        schema.getSchemaWithNameAndNameSpace(value.getSchema()),
+                        value.getSchema());
+                // we already are working with the newer version, no need to update
+                // the composition schema
+                if(schema.eventUnionContains(newerSchema)) {
+                    var newValue = GenericRecordAdapter.adaptToNewSchema(value, newerSchema);
+                    return composedGenericRecord(schema, newValue);
+                }
+                // the new schema is a newer version, update the composition
+                else {
+                    var updatedSchema = updateCompositionSchema(schema, value);
+                    registerSafe(updatedSchema, value);
+                    return composedGenericRecord(updatedSchema, value);
+                }
+            }
         }
+        // schema not present in event union type
+        // add it
         else {
             var updatedSchema = updateCompositionSchema(schema, value);
-            registerSafe(updatedSchema);
+            registerSafe(updatedSchema, value);
             return composedGenericRecord(updatedSchema, value);
         }
     }
     
+    private Schema getNewerVersionSafe(Schema left, Schema right) {
+        try {
+            return versionService.getNewerSchema(
+                    inputTopicValueSubject(left),
+                    left,
+                    right);
+        }
+        catch(Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
+    private String inputTopicValueSubject(Schema schema) {
+        return new TopicRecordNameStrategy().subjectName(topics.getInput(), false, new AvroSchema(schema));
+    }
+    
     private GenericRecord processNewSchema(GenericRecord value) {
         var newSchema = createCompositionSchema(value);
-        registerSafe(newSchema);
+        registerSafe(newSchema, value);
         return composedGenericRecord(newSchema, value);
     }
     
-    private void registerSafe(CompositionSchema schema) {
+    private void registerSafe(CompositionSchema schema, GenericRecord value) {
         try {
-            service.register(schema);
+            schemaService.register(schema);
         } catch (RegistrationException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Error occured while adding schema '%s' to the composed schema".formatted(value.getSchema().getName()), e);
         }
     }
     
@@ -101,9 +154,9 @@ public class CompositionProcessor implements Processor<Bytes, GenericRecord, Byt
     
     private SchemaBuilder compositionSchema() {
         return SchemaBuilder.newBuilder()
-                .name(config.getName())
-                .documentation(config.getDocumentation())
-                .namespace(config.getNamespace());
+                .name(composition.getName())
+                .documentation(composition.getDocumentation())
+                .namespace(composition.getNamespace());
     }
     
     private Field updateEventField(CompositionSchema schema, GenericRecord value) {
@@ -129,7 +182,7 @@ public class CompositionProcessor implements Processor<Bytes, GenericRecord, Byt
     private Schema unknown() {
         return SchemaBuilder.newBuilder()
                 .name("Unknown")
-                .namespace(config.getNamespace())
+                .namespace(composition.getNamespace())
                 .build();
     }
 }
