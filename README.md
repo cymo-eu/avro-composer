@@ -9,7 +9,9 @@ docker run \
   
 See src/main/resources/application-example.yml on how to build your configuration.
 
+TODO
 
+error handling
 
 TESTCASES TODO
 
