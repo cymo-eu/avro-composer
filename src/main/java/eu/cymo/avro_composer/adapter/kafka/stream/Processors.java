@@ -34,7 +34,7 @@ public class Processors {
     
     public ProcessorSupplier<Bytes, GenericRecord, Bytes, GenericRecord> composition() {
         return () -> wrapInTracer(
-                "composition-proces", 
+                "composition-process", 
                 new CompositionProcessor(
                     avroSchemaService,
                     compositionSchemaService,
