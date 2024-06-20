@@ -23,11 +23,10 @@ public class GenericRecordAdapter {
         for(var field : newSchema.getFields()) {
             var value = oldValues.get(field.name());
             if(value != null) {
-                if(hasTypeRecord(field)) {
-                    newRecord.put(field.name(), adaptToNewSchema((GenericRecord) value, field.schema()));
+                if(value instanceof GenericRecord oldValue) {
+                    newRecord.put(field.name(), adaptToNewSchema(oldValue, findRecordSchema(oldValue, field)));
                 }
-                else if(hasTypeArray(field)) {
-                    var oldArray = (GenericData.Array<?>) value;
+                else if(value instanceof GenericData.Array oldArray) {
                     var array = new GenericData.Array<>(oldArray.size(), field.schema());
                     for(var item : oldArray) {
                         array.add(processArrayItem(item, field.schema().getElementType()));
@@ -47,6 +46,19 @@ public class GenericRecordAdapter {
         }
         
         return newRecord;
+    }
+    
+    private static Schema findRecordSchema(GenericRecord record, Field field) {
+        var oldSchema = record.getSchema();
+        if(field.schema().getType() == Schema.Type.UNION) {
+            return field.schema()
+                    .getTypes()
+                    .stream()
+                    .filter(s -> Objects.equals(s.getFullName(), oldSchema.getFullName()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Failed to find schema '%s' in union field '%s'".formatted(oldSchema.getName(), field)));
+        }
+        return field.schema();
     }
     
     private static Object processArrayItem(Object item, Schema schema) {
