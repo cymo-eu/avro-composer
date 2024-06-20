@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
+import org.apache.avro.Schema.Type;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 
@@ -27,9 +28,9 @@ public class GenericRecordAdapter {
                     newRecord.put(field.name(), adaptToNewSchema(oldValue, findRecordSchema(oldValue, field)));
                 }
                 else if(value instanceof GenericData.Array oldArray) {
-                    var array = new GenericData.Array<>(oldArray.size(), field.schema());
+                    var array = new GenericData.Array<>(oldArray.size(), findArrayWhenUnion(field));
                     for(var item : oldArray) {
-                        array.add(processArrayItem(item, field.schema().getElementType()));
+                        array.add(processArrayItem(item, findArrayElementType(field)));
                     }
                     newRecord.put(field.name(), array);
                 }
@@ -61,6 +62,22 @@ public class GenericRecordAdapter {
         return field.schema();
     }
     
+    private static Schema findArrayWhenUnion(Field field) {
+        if(field.schema().getType() == Schema.Type.UNION) {
+            return field.schema()
+                    .getTypes()
+                    .stream()
+                    .filter(s -> s.getType() == Type.ARRAY)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Failed to find array schema in union field '%s'".formatted(field)));
+        }
+        return field.schema();
+    }
+    
+    private static Schema findArrayElementType(Field field) {
+        return findArrayWhenUnion(field).getElementType();
+    }
+    
     private static Object processArrayItem(Object item, Schema schema) {
         if(schema.getType() == Schema.Type.RECORD) {
             return adaptToNewSchema((GenericRecord) item, schema);
@@ -68,18 +85,6 @@ public class GenericRecordAdapter {
         else {
             return item;
         }
-    }
-    
-    private static boolean hasTypeRecord(Field field) {
-        return hasType(field, Schema.Type.RECORD);
-    }
-    
-    private static boolean hasTypeArray(Field field) {
-        return hasType(field, Schema.Type.ARRAY);
-    }
-    
-    private static boolean hasType(Field field, Schema.Type type) {
-        return field.schema().getType() == type;
     }
     
     private static Map<String, Object> getValues(GenericRecord record) {

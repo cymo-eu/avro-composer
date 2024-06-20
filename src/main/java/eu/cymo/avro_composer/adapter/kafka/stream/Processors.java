@@ -2,49 +2,48 @@ package eu.cymo.avro_composer.adapter.kafka.stream;
 
 import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.streams.processor.api.Processor;
 import org.apache.kafka.streams.processor.api.ProcessorSupplier;
 import org.springframework.stereotype.Component;
 
 import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
-import eu.cymo.avro_composer.adapter.kafka.avro.OtherAvroSchemaService;
-import eu.cymo.avro_composer.adapter.kafka.avro.SchemaVersionService;
-import eu.cymo.avro_composer.adapter.kafka.avro.SubjectAvroSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.AvroSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.CompositionSchemaService;
+import io.micrometer.tracing.Tracer;
 
 @Component
 public class Processors {
-    private final SubjectAvroSchemaService schemaService;
-    private final SchemaVersionService versionService;
     private final TopicsConfig topics;
     private final CompositionConfig composition;
-    private final OtherAvroSchemaService otherService;
+    private final AvroSchemaService avroSchemaService;
+    private final CompositionSchemaService compositionSchemaService;
+    private final Tracer tracer;
     
     public Processors(
-            SubjectAvroSchemaService schemaService,
-            SchemaVersionService versionService,
             TopicsConfig topics,
             CompositionConfig composition,
-            OtherAvroSchemaService otherService) {
-        this.schemaService = schemaService;
-        this.versionService = versionService;
+            AvroSchemaService avroSchemaService,
+            CompositionSchemaService compositionSchemaService,
+            Tracer tracer) {
         this.topics = topics;
         this.composition = composition;
-        this.otherService = otherService;
+        this.avroSchemaService = avroSchemaService;
+        this.compositionSchemaService = compositionSchemaService;
+        this.tracer = tracer;
     }
     
     public ProcessorSupplier<Bytes, GenericRecord, Bytes, GenericRecord> composition() {
-        return () -> new CompositionProcessor(
-                schemaService,
-                versionService,
-                topics,
-                composition);
+        return () -> wrapInTracer(
+                "composition-proces", 
+                new CompositionProcessor(
+                    avroSchemaService,
+                    compositionSchemaService,
+                    composition,
+                    topics));
     }
     
-    public ProcessorSupplier<Bytes, GenericRecord, Bytes, GenericRecord> compositionV2() {
-        return () -> new CompositionV2Processor(
-                otherService,
-                composition,
-                topics);
+    private <KIn, VIn, KOut, VOut> Processor<KIn, VIn, KOut, VOut> wrapInTracer(String tag, Processor<KIn, VIn, KOut, VOut> target) {
+        return new TracingProcessor<>(tracer, tag, target);
     }
-    
     
 }

@@ -14,11 +14,13 @@
 	<version>0.0.1</version>
 	<name>avro-composer</name>
 	<description>For a single topic, compose all avro schemas into 1</description>
+	
 	<properties>
 		<java.version>21</java.version>
 		<confluent.version>7.5.1</confluent.version>
 		<avro.version>1.10.2</avro.version>
 	</properties>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -32,6 +34,16 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-tracing-bridge-otel</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.opentelemetry</groupId>
+			<artifactId>opentelemetry-exporter-zipkin</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>kafka-streams</artifactId>
@@ -111,9 +123,9 @@
 				<artifactId>jib-maven-plugin</artifactId>
 				<version>3.4.0</version>
 				<configuration>
-                    <from>
-                        <image>openjdk:${java.version}</image>
-                    </from>
+					<from>
+						<image>openjdk:${java.version}</image>
+					</from>
 					<to>
 						<image>${project.groupId}/${project.artifactId}</image>
 						<tags>
@@ -130,6 +142,11 @@
 			<id>confluent</id>
 			<name>confluent</name>
 			<url>https://packages.confluent.io/maven/</url>
+		</repository>
+		<repository>
+			<id>spring-milestones</id>
+			<name>Spring Milestones</name>
+			<url>https://repo.spring.io/milestone</url>
 		</repository>
 	</repositories>
 

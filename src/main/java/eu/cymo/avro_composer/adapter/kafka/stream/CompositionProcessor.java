@@ -1,188 +1,176 @@
 package eu.cymo.avro_composer.adapter.kafka.stream;
 
+import java.util.Optional;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
 import org.apache.avro.Schema;
-import org.apache.avro.Schema.Field;
-import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.processor.api.Processor;
 import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
+import eu.cymo.avro_composer.adapter.kafka.avro.AvroSchemaService;
 import eu.cymo.avro_composer.adapter.kafka.avro.CompositionSchema;
-import eu.cymo.avro_composer.adapter.kafka.avro.FieldBuilder;
+import eu.cymo.avro_composer.adapter.kafka.avro.CompositionSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.Fields;
 import eu.cymo.avro_composer.adapter.kafka.avro.GenericRecordAdapter;
-import eu.cymo.avro_composer.adapter.kafka.avro.RegistrationException;
-import eu.cymo.avro_composer.adapter.kafka.avro.SchemaBuilder;
-import eu.cymo.avro_composer.adapter.kafka.avro.SchemaVersionService;
-import eu.cymo.avro_composer.adapter.kafka.avro.SubjectAvroSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.GenericRecords;
+import eu.cymo.avro_composer.adapter.kafka.avro.Schemas;
 import io.confluent.kafka.schemaregistry.avro.AvroSchema;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 
 public class CompositionProcessor implements Processor<Bytes, GenericRecord, Bytes, GenericRecord> {
-    private final SubjectAvroSchemaService schemaService;
-    private final SchemaVersionService versionService;
-    private final TopicsConfig topics;
+    private final AvroSchemaService avroSchemaService;
+    private final CompositionSchemaService compositionSchemaService;
     private final CompositionConfig composition;
+    private final TopicsConfig topics;
     
     private ProcessorContext<Bytes, GenericRecord> context;
     
+    private final Logger log = LoggerFactory.getLogger(CompositionProcessor.class);
+    
     public CompositionProcessor(
-            SubjectAvroSchemaService schemaService,
-            SchemaVersionService versionService,
-            TopicsConfig topics,
-            CompositionConfig composition) {
-        this.schemaService = schemaService;
-        this.versionService = versionService;
-        this.topics = topics;
+            AvroSchemaService service,
+            CompositionSchemaService compositionSchemaService,
+            CompositionConfig composition,
+            TopicsConfig topics) {
+        this.avroSchemaService = service;
+        this.compositionSchemaService = compositionSchemaService;
         this.composition = composition;
+        this.topics = topics;
     }
     
     @Override
     public void init(ProcessorContext<Bytes, GenericRecord> context) {
         this.context = context;
     }
-    
+
     @Override
     public void process(Record<Bytes, GenericRecord> record) {
-        try {
-            var value = record.value();
-
-            var newValue = schemaService.getLatestSchema()
-                .map(schema -> processExistingSchema(schema, value))
-                .orElseGet(() -> processNewSchema(value));
+        var value = record.value();
+        
+        var composed = Optional.ofNullable(compositionSchemaService.getLatestSchema())
+            .map(s -> processExistingSchema(s, value))
+            .orElseGet(() -> processNewSchema(value));
+        
+        context.forward(
+                new Record<>(
+                        record.key(),
+                        composed,
+                        record.timestamp(),
+                        record.headers()));
+    }
+    
+    private GenericRecord processExistingSchema(CompositionSchema compositionSchema, GenericRecord value) {
+        if(compositionSchema.eventUnionHasSchemaWithNameAndNamespace(value.getSchema())) {
+            var eventSchema = compositionSchema.getSchemaWithNameAndNameSpace(value.getSchema());
             
-            context.forward(
-                    new Record<>(
-                            record.key(),
-                            newValue,
-                            record.timestamp(),
-                            record.headers()));
-        }
-        catch(Exception e) {
-            throw new RecoverableProcessingException(e.getMessage(), e);
-        }
-    }
-    
-    private GenericRecord processExistingSchema(CompositionSchema schema, GenericRecord value) {
-        // if the existing schema has a matching schema in the event union,
-        // it's still possible we have a mismatch of versions
-        if(schema.eventUnionHasSchemaWithNameAndNamespace(value.getSchema())) {
-            // the schema version is the same, just continue
-            if(schema.eventUnionContains(value.getSchema())) {
-                return composedGenericRecord(schema, value);
-            }
-            // we have a version mismatch, we have to decide which version is newer
-            else {
+            var eventSchemaVersion = version(eventSchema);
+            var valueVersion = version(value.getSchema());
+            
+            if(valueVersion > eventSchemaVersion) {
+                // we are working with an outdated composition schema
+                // invalidate the cache and rebuild
+                compositionSchemaService.invalidateCachedValue();
                 
-                var newerSchema = getNewerVersionSafe(
-                        schema.getSchemaWithNameAndNameSpace(value.getSchema()),
-                        value.getSchema());
-                // we already are working with the newer version, no need to update
-                // the composition schema
-                if(schema.eventUnionContains(newerSchema)) {
-                    var newValue = GenericRecordAdapter.adaptToNewSchema(value, newerSchema);
-                    return composedGenericRecord(schema, newValue);
-                }
-                // the new schema is a newer version, update the composition
-                else {
-                    var updatedSchema = updateCompositionSchema(schema, value);
-                    registerSafe(updatedSchema, value);
-                    return composedGenericRecord(updatedSchema, value);
-                }
+                var updatedCompositionSchema = updateCompositionSchemaToLatest();
+                compositionSchemaService.register(updatedCompositionSchema);
+                
+                var newValue = adaptToNewSchema(value, updatedCompositionSchema.getSchemaWithNameAndNameSpace(value.getSchema()));
+                return GenericRecords.composed(updatedCompositionSchema, newValue);
+            }
+            else {
+                // value has out of date schema, update value to be compliant
+                var newValue = adaptToNewSchema(value, eventSchema);
+                return GenericRecords.composed(compositionSchema, newValue);
             }
         }
-        // schema not present in event union type
-        // add it
         else {
-            var updatedSchema = updateCompositionSchema(schema, value);
-            registerSafe(updatedSchema, value);
-            return composedGenericRecord(updatedSchema, value);
+            var latestSchema = avroSchemaService.getLatestSchema(inputTopicValueSubject(value.getSchema()));
+            var updatedCompositionSchema = addSchemaToCompositionSchema(compositionSchema, latestSchema);
+            
+            compositionSchemaService.register(updatedCompositionSchema);
+
+            var newValue = adaptToNewSchema(value, latestSchema);
+            return GenericRecords.composed(updatedCompositionSchema, newValue);
         }
     }
     
-    private Schema getNewerVersionSafe(Schema left, Schema right) {
+    private GenericRecord processNewSchema(GenericRecord value) {
+        var latest = avroSchemaService.getLatestSchema(inputTopicValueSubject(value.getSchema()));
+        var compositionSchema = newCompositionSchema(latest);
+        
+        compositionSchemaService.register(compositionSchema);
+        
+        var newValue = adaptToNewSchema(value, latest);
+        return GenericRecords.composed(compositionSchema, newValue);
+    }
+    
+    private GenericRecord adaptToNewSchema(GenericRecord value, Schema latest) {
         try {
-            return versionService.getNewerSchema(
-                    inputTopicValueSubject(left),
-                    left,
-                    right);
+            return GenericRecordAdapter.adaptToNewSchema(value, latest);
         }
         catch(Exception e) {
+            log.error("Adapter failure:");
+            log.error("Record: {}", value);
+            log.error("Record schema: {}", value.getSchema());
+            log.error("Latest schema: {}", latest);
             throw new RuntimeException(e);
         }
+    }
+    
+    /**
+     * For every union schema in event field (excluding 'Schemas.SCHEMA_UNKNOWN')
+     * bring the schema to the latest version. This is to avoid mismatches in
+     * nested record schemas.
+     */
+    private CompositionSchema updateCompositionSchemaToLatest() {
+        var subjects = compositionSchemaService.getLatestSchema()
+                .eventFieldUnionTypes()
+                .stream()
+                .filter(Predicate.not(s -> s.getName().equals(Schemas.SCHEMA_UNKNOWN)))
+                .map(this::inputTopicValueSubject)
+                .toList();
+        
+        var schemas = subjects.stream()
+                .map(avroSchemaService::getLatestSchema)
+                .toList();
+        
+        return new CompositionSchema(
+                Schemas.composition(
+                        composition,
+                        Fields.event(composition, schemas)));
+    }
+    
+    private int version(Schema schema) {
+        return avroSchemaService.getVersion(inputTopicValueSubject(schema), schema);
     }
     
     private String inputTopicValueSubject(Schema schema) {
         return new TopicRecordNameStrategy().subjectName(topics.getInput(), false, new AvroSchema(schema));
     }
     
-    private GenericRecord processNewSchema(GenericRecord value) {
-        var newSchema = createCompositionSchema(value);
-        registerSafe(newSchema, value);
-        return composedGenericRecord(newSchema, value);
-    }
-    
-    private void registerSafe(CompositionSchema schema, GenericRecord value) {
-        try {
-            schemaService.register(schema);
-        } catch (RegistrationException e) {
-            throw new RuntimeException("Error occured while adding schema '%s' to the composed schema".formatted(value.getSchema().getName()), e);
-        }
-    }
-    
-    private GenericRecord composedGenericRecord(CompositionSchema schema, GenericRecord value) {
-        var newValue = new GenericData.Record(schema.schema());
-        newValue.put(CompositionSchema.EVENT_FIELD, value);
-        return newValue;
-    }
-    
-    private CompositionSchema createCompositionSchema(GenericRecord value) {
+    private CompositionSchema addSchemaToCompositionSchema(CompositionSchema currentSchema, Schema schema) {
         return new CompositionSchema(
-                compositionSchema()
-                    .field(generateEventField(value))
-                    .build());
+                Schemas.composition(
+                        composition,
+                        Fields.event(
+                                composition,
+                                Stream.concat(
+                                        currentSchema.eventFieldUnionTypes().stream(), 
+                                        Stream.of(schema)).toList())));
     }
     
-    private CompositionSchema updateCompositionSchema(CompositionSchema schema, GenericRecord value) {
+    private CompositionSchema newCompositionSchema(Schema schema) {
         return new CompositionSchema(
-                compositionSchema()
-                    .field(updateEventField(schema, value))
-                    .build());
+                Schemas.composition(
+                        composition,
+                        Fields.event(composition, schema)));
     }
-    
-    private SchemaBuilder compositionSchema() {
-        return SchemaBuilder.newBuilder()
-                .name(composition.getName())
-                .documentation(composition.getDocumentation())
-                .namespace(composition.getNamespace());
-    }
-    
-    private Field updateEventField(CompositionSchema schema, GenericRecord value) {
-        return eventField()
-                .types(schema.eventFieldUnionTypes())
-                .type(value.getSchema())
-                .build();
-    }
-    
-    private Field generateEventField(GenericRecord value) {
-        return eventField()
-                .type(unknown())
-                .type(value.getSchema())
-                .build();
-    }
-    
-    private FieldBuilder eventField() {
-        return FieldBuilder.newBuilder()
-                .name(CompositionSchema.EVENT_FIELD)
-                .documentation(null);
-    }
-    
-    private Schema unknown() {
-        return SchemaBuilder.newBuilder()
-                .name("Unknown")
-                .namespace(composition.getNamespace())
-                .build();
-    }
+
 }

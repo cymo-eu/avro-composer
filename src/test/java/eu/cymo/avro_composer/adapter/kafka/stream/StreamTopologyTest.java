@@ -16,8 +16,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
-import eu.cymo.avro_composer.adapter.kafka.avro.SchemaVersionService;
-import eu.cymo.avro_composer.adapter.kafka.avro.SubjectAvroSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.CompositionSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.SchemaRegistryClientAvroSchemaService;
 import eu.cymo.kafkaSerializationEvolution.event.OrderConfirmed;
 import eu.cymo.kafkaSerializationEvolution.event.OrderDelivered;
 import eu.cymo.kafkaSerializationEvolution.event.OrderShipped;
@@ -25,6 +25,7 @@ import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.schemaregistry.testutil.MockSchemaRegistry;
+import io.micrometer.tracing.Tracer;
 
 class StreamTopologyTest {
     private final String subject = "output-value";
@@ -45,16 +46,15 @@ class StreamTopologyTest {
         composition.setNamespace("eu.cymo.kafkaSerializationEvolution.event");
         composition.setSubject(subject);
         
-        var subjectAvroSchemaService = new SubjectAvroSchemaService(schemaRegistry, composition);
-        var schemaVersionService = new SchemaVersionService(schemaRegistry);
-        
         var topics = new TopicsConfig();
         topics.setInput("input");
         topics.setOutput("output");
         
         var avroSerdes = new MockAvroSerdeFactory(schemaRegistry);
+        var avroSchemaService = new SchemaRegistryClientAvroSchemaService(schemaRegistry);
+        var compositionSchemaService = new CompositionSchemaService(avroSchemaService, composition);
         
-        var processors = new Processors(subjectAvroSchemaService, schemaVersionService, topics, composition, null);
+        var processors = new Processors(topics, composition, avroSchemaService, compositionSchemaService, Tracer.NOOP);
         
         var builder = new StreamsBuilder();
         new StreamTopology(topics, avroSerdes, processors).configure(builder);

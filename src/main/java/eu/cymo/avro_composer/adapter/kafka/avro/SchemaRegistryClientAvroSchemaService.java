@@ -12,10 +12,11 @@ import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 
 @Component
-public class OtherAvroSchemaService {
+public class SchemaRegistryClientAvroSchemaService implements AvroSchemaService {
     private final SchemaRegistryClient client;
-
-    public OtherAvroSchemaService(SchemaRegistryClient client) {
+    
+    public SchemaRegistryClientAvroSchemaService(
+            SchemaRegistryClient client) {
         this.client = client;
     }
 
@@ -26,7 +27,7 @@ public class OtherAvroSchemaService {
             throw new RuntimeException(e);
         }
     }
-    
+
     public Schema getLatestSchema(String subject) {
         try {
             return Optional.ofNullable(client.getLatestSchemaMetadata(subject))
@@ -37,7 +38,7 @@ public class OtherAvroSchemaService {
             return null;
         }
     }
-    
+
     public int getVersion(String subject, Schema schema) {
         try {
             return client.getVersion(subject, new AvroSchema(schema));
