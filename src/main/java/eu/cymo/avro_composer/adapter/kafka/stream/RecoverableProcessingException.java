@@ -6,4 +6,9 @@ public class RecoverableProcessingException extends RuntimeException {
     public RecoverableProcessingException(String message, Throwable throwable) {
         super(message, throwable);
     }
+
+    public RecoverableProcessingException(Throwable throwable) {
+        super(throwable);
+    }
+    
 }

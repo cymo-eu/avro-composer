@@ -2,6 +2,8 @@ package eu.cymo.avro_composer.adapter.kafka.stream;
 
 import java.util.Map;
 
+import org.springframework.stereotype.Component;
+
 import eu.cymo.avro_composer.adapter.kafka.avro.AvroSerdeFactory;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
@@ -10,6 +12,7 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import io.confluent.kafka.streams.serdes.avro.GenericAvroSerde;
 
+@Component
 public class MockAvroSerdeFactory implements AvroSerdeFactory {
     private SchemaRegistryClient schemaRegistryClient;
     

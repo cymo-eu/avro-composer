@@ -20,7 +20,7 @@ public class TracingAvroSchemaService implements AvroSchemaService {
     }
 
     @Override
-    public void register(String subject, Schema schema) {
+    public void register(String subject, Schema schema) throws RegistrationException {
         var span = tracer.startScopedSpan("avro-schema-service-register");
         try {
             target.register(subject, schema);
@@ -42,7 +42,7 @@ public class TracingAvroSchemaService implements AvroSchemaService {
     }
 
     @Override
-    public int getVersion(String subject, Schema schema) {
+    public int getVersion(String subject, Schema schema) throws RetrieveVersionException {
         var span = tracer.startScopedSpan("avro-schema-service-get-version");
         try {
             return target.getVersion(subject, schema);

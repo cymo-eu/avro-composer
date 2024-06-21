@@ -1,6 +1,7 @@
 package eu.cymo.avro_composer.adapter.kafka.stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.context.annotation.FilterType.REGEX;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -8,61 +9,54 @@ import java.util.Optional;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.TestInputTopic;
 import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.TopologyTestDriver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.ComponentScan;
 
 import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
-import eu.cymo.avro_composer.adapter.kafka.avro.CompositionSchemaService;
-import eu.cymo.avro_composer.adapter.kafka.avro.SchemaRegistryClientAvroSchemaService;
+import eu.cymo.avro_composer.adapter.kafka.avro.AvroSerdeFactory;
+import eu.cymo.avro_composer.adapter.kafka.stream.topology.TopologyTest;
 import eu.cymo.kafkaSerializationEvolution.event.OrderConfirmed;
 import eu.cymo.kafkaSerializationEvolution.event.OrderDelivered;
 import eu.cymo.kafkaSerializationEvolution.event.OrderShipped;
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
-import io.confluent.kafka.schemaregistry.testutil.MockSchemaRegistry;
-import io.micrometer.tracing.Tracer;
 
-class StreamTopologyTest {
-    private final String subject = "output-value";
+@TopologyTest(
+        includeFilters = { 
+                @ComponentScan.Filter(type = REGEX, pattern = { "eu.cymo.avro_composer.adapter.kafka.*" })})
+public class StreamTopologyTest {
+    @Autowired
+    private TopicsConfig topics;
+    @Autowired
+    private CompositionConfig composition;
     
+    @Autowired
+    private AvroSerdeFactory avroSerdes;
+    @Autowired
     private SchemaRegistryClient schemaRegistry;
     
+    @Autowired
     private TopologyTestDriver driver;
 
     private TestInputTopic<String, GenericRecord> input;
     private TestOutputTopic<String, GenericRecord> output;
     
     @BeforeEach
-    void setup() { 
-        schemaRegistry = MockSchemaRegistry.getClientForScope("test-scope");
-        
-        var composition = new CompositionConfig();
-        composition.setName("Order");
-        composition.setNamespace("eu.cymo.kafkaSerializationEvolution.event");
-        composition.setSubject(subject);
-        
-        var topics = new TopicsConfig();
-        topics.setInput("input");
-        topics.setOutput("output");
-        
-        var avroSerdes = new MockAvroSerdeFactory(schemaRegistry);
-        var avroSchemaService = new SchemaRegistryClientAvroSchemaService(schemaRegistry);
-        var compositionSchemaService = new CompositionSchemaService(avroSchemaService, composition);
-        
-        var processors = new Processors(topics, composition, avroSchemaService, compositionSchemaService, Tracer.NOOP);
-        
-        var builder = new StreamsBuilder();
-        new StreamTopology(topics, avroSerdes, processors).configure(builder);
-        
-        driver = new TopologyTestDriver(builder.build());
-        
-        input = driver.createInputTopic(topics.getInput(), Serdes.String().serializer(), avroSerdes.genericAvroValueSerde().serializer());
-        output = driver.createOutputTopic(topics.getOutput(), Serdes.String().deserializer(), avroSerdes.genericAvroValueSerde().deserializer());
+    void setup() {
+        input = driver.createInputTopic(
+                topics.getInput(),
+                Serdes.String().serializer(),
+                avroSerdes.genericAvroValueSerde().serializer());
+        output = driver.createOutputTopic(
+                topics.getOutput(),
+                Serdes.String().deserializer(),
+                avroSerdes.genericAvroValueSerde().deserializer());
     }
 
     /**
@@ -150,7 +144,7 @@ class StreamTopologyTest {
     }
     
     /**
-     * This test verifies that the event field hasa union of all input
+     * This test verifies that the event field has a union of all input
      * record schemas.
      */
     @Test
@@ -181,12 +175,12 @@ class StreamTopologyTest {
     
     private Schema getOutputSchema() {
         try {
-            return Optional.ofNullable(schemaRegistry.getLatestSchemaMetadata(subject))
+            return Optional.ofNullable(schemaRegistry.getLatestSchemaMetadata(composition.getSubject()))
                     .map(SchemaMetadata::getSchema)
                     .map(new Schema.Parser()::parse)
-                    .orElseThrow(() -> new RuntimeException("No metadata found for subject '%s'".formatted(subject)));
+                    .orElseThrow(() -> new RuntimeException("No metadata found for subject '%s'".formatted(composition.getSubject())));
         } catch (IOException | RestClientException e) {
-            throw new RuntimeException("Failed to retrieve the latest schema metadata for subject '%s'".formatted(subject), e);
+            throw new RuntimeException("Failed to retrieve the latest schema metadata for subject '%s'".formatted(composition.getSubject()), e);
         }
     }
     

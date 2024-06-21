@@ -2,6 +2,7 @@ package eu.cymo.avro_composer.adapter.kafka.avro;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -49,6 +50,13 @@ public record CompositionSchema(Schema schema) {
     
     public Schema eventFieldSchema() {
         return eventField().schema();
+    }
+    
+    public List<Schema> eventFieldUnionTypesWithoutUnknown() {
+        return eventFieldUnionTypes()
+                .stream()
+                .filter(Predicate.not(s -> s.getName().equals(Schemas.SCHEMA_UNKNOWN)))
+                .toList();
     }
     
     public List<Schema> eventFieldUnionTypes() {

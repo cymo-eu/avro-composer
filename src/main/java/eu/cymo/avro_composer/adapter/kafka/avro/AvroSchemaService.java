@@ -4,10 +4,10 @@ import org.apache.avro.Schema;
 
 public interface AvroSchemaService {
 
-    public void register(String subject, Schema schema);
+    public void register(String subject, Schema schema) throws RegistrationException;
 
     public Schema getLatestSchema(String subject);
 
-    public int getVersion(String subject, Schema schema);
+    public int getVersion(String subject, Schema schema) throws RetrieveVersionException;
     
 }

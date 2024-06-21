@@ -1,0 +1,14 @@
+composer:
+  topics:
+    input: input
+    output: output
+  composition:
+    name: CompositionEvent
+    namespace: eu.cymo.avro_composer.event
+    documentation: documentation
+    subject: output-value
+
+spring:
+  kafka:
+    streams:
+      application-id: test-topology

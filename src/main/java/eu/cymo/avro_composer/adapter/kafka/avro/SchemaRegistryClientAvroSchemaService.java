@@ -20,11 +20,11 @@ public class SchemaRegistryClientAvroSchemaService implements AvroSchemaService 
         this.client = client;
     }
 
-    public void register(String subject, Schema schema) {
+    public void register(String subject, Schema schema) throws RegistrationException {
         try {
             client.register(subject, new AvroSchema(schema));
         } catch (IOException | RestClientException e) {
-            throw new RuntimeException(e);
+            throw new RegistrationException("Failed to register schema for subject '%s': %s".formatted(subject, schema), e);
         }
     }
 
@@ -39,11 +39,11 @@ public class SchemaRegistryClientAvroSchemaService implements AvroSchemaService 
         }
     }
 
-    public int getVersion(String subject, Schema schema) {
+    public int getVersion(String subject, Schema schema) throws RetrieveVersionException {
         try {
             return client.getVersion(subject, new AvroSchema(schema));
         } catch (IOException | RestClientException e) {
-            throw new RuntimeException(e);
+            throw new RetrieveVersionException("Failed to retrieve version for schema '%s'".formatted(schema.getFullName()), e);
         }
     }
 }

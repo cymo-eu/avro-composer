@@ -20,14 +20,14 @@ public class CompositionSchemaService {
         this.composition = composition;
     }
     
-    public void register(CompositionSchema compositionSchema) {
+    public void register(CompositionSchema compositionSchema) throws RegistrationException {
         try {
             schemaService.register(composition.getSubject(), compositionSchema.schema());
             setCachedSchema(compositionSchema);
         }
-        catch (Exception e) {
+        catch (RegistrationException e) {
             setCachedSchema(null);
-            throw new RuntimeException(e);
+            throw e;
         }
     }
     
