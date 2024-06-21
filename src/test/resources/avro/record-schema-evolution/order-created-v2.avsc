@@ -1,0 +1,38 @@
+{
+    "type": "record",
+    "name": "OrderCreatedRecordEvolution",
+    "namespace": "eu.cymo.kafkaSerializationEvolution.event",
+    "fields": [
+        {
+            "name": "order",
+            "type": [
+                "null",
+                {
+                    "type": "record",
+                    "name": "OrderRecordEvolution",
+                    "fields": [
+                        {
+                            "name": "orderId",
+                            "type": {
+                                "type": "string",
+                                "avro.java.string": "String"
+                            }
+                        },
+                        {
+                            "name": "customerId",
+                            "type": [
+                                "null",
+                                {
+                                    "type": "string",
+                                    "avro.java.string": "String"
+                                }
+                            ],
+                            "default": null
+                        }
+                    ]
+                }
+            ],
+            "default": null
+        }
+    ]
+}

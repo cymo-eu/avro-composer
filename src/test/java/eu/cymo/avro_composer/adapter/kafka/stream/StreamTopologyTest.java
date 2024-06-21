@@ -12,6 +12,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.TestInputTopic;
 import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.TopologyTestDriver;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,10 @@ import org.springframework.context.annotation.ComponentScan;
 
 import eu.cymo.avro_composer.adapter.kafka.TopicsConfig;
 import eu.cymo.avro_composer.adapter.kafka.avro.AvroSerdeFactory;
+import eu.cymo.avro_composer.adapter.kafka.avro.OrderCreatedArrayEvolutionV1;
+import eu.cymo.avro_composer.adapter.kafka.avro.OrderCreatedArrayEvolutionV2;
+import eu.cymo.avro_composer.adapter.kafka.avro.OrderCreatedRecordEvolutionV1;
+import eu.cymo.avro_composer.adapter.kafka.avro.OrderCreatedRecordEvolutionV2;
 import eu.cymo.avro_composer.adapter.kafka.stream.topology.TopologyTest;
 import eu.cymo.kafkaSerializationEvolution.event.OrderConfirmed;
 import eu.cymo.kafkaSerializationEvolution.event.OrderDelivered;
@@ -59,6 +64,11 @@ public class StreamTopologyTest {
                 avroSerdes.genericAvroValueSerde().deserializer());
     }
 
+    @AfterEach
+    void clearTopics() {
+        output.readValuesToList();
+    }
+    
     /**
      * This tests covers the initial state of stream, when no schema has been
      * defined yet for the output topic. This test verifies a new schema is
@@ -166,7 +176,65 @@ public class StreamTopologyTest {
                 orderConfirmed.getSchema(),
                 orderShipped.getSchema(),
                 orderDelivered.getSchema());
+    }
+    
+    /**
+     * When a newer version of a schema is available, update the output
+     * schema with the newer version.
+     */
+    @Test
+    void supportsRecordEvolution() {
+        // given
+        var createdV1 = OrderCreatedRecordEvolutionV1.newBuilder()
+                .orderId("order-id")
+                .build();
+        var createdV2 = OrderCreatedRecordEvolutionV2.newBuilder()
+                .orderId("order-id")
+                .customerId("customer-id")
+                .build();
         
+        // when
+        input.pipeInput(createdV1);
+        input.pipeInput(createdV2);
+        
+        // then
+        var result = output.readValuesToList();
+        var eventSchema = getOutputEventFieldSchema();
+        
+        assertThat(result)
+            .satisfiesExactly(
+                    item1 -> assertThat(item1.get("event").toString()).isEqualTo(createdV1.toString()),
+                    item2 -> assertThat(item2.get("event").toString()).isEqualTo(createdV2.toString()));
+        assertThat(eventSchema.getTypes()).contains(createdV2.getSchema());
+    }
+    
+    /**
+     * When a newer version of a schema is available, update the output
+     * schema with the newer version.
+     */
+    @Test
+    void supportsArrayEvolution() {
+        // given
+        var createdV1 = OrderCreatedArrayEvolutionV1.newBuilder()
+                .order(new OrderCreatedArrayEvolutionV1.Order("order-id"))
+                .build();
+        var createdV2 = OrderCreatedArrayEvolutionV2.newBuilder()
+                .order(new OrderCreatedArrayEvolutionV2.Order("order-id", "customerId"))
+                .build();
+        
+        // when
+        input.pipeInput(createdV1);
+        input.pipeInput(createdV2);
+        
+        // then
+        var result = output.readValuesToList();
+        var eventSchema = getOutputEventFieldSchema();
+        
+        assertThat(result)
+            .satisfiesExactly(
+                    item1 -> assertThat(item1.get("event").toString()).isEqualTo(createdV1.toString()),
+                    item2 -> assertThat(item2.get("event").toString()).isEqualTo(createdV2.toString()));
+        assertThat(eventSchema.getTypes()).contains(createdV2.getSchema());
     }
     
     private Schema getOutputEventFieldSchema() {

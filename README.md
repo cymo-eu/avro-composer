@@ -8,14 +8,3 @@ docker run \
 
   
 See src/main/resources/application-example.yml on how to build your configuration.
-
-TODO
-
-error handling
-
-TESTCASES TODO
-
-adapting union fields:
-- [null, record]
-- [null, array]
-schema evolution + mix of order of versions
