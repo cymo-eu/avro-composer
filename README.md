@@ -64,7 +64,6 @@ spring:
         sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username='${KAFKA_USERNAME}' password='${KAFKA_PASSWORD}';
         security.protocol: SASL_SSL
         # schema registry
-        # schema registry
         schema.registry.url: ${SCHEMA_URL}
         schema.registry.basic.auth.credentials.source: USER_INFO
         schema.registry.basic.auth.user.info: "${SCHEMA_USERNAME}:${SCHEMA_PASSWORD}"
@@ -97,7 +96,7 @@ composer:
 
 ### Tracing
 
-Open telemetry has been included to verify the performance of the composition. By default this is enabled, but with the following configuration, it can be enabled again:
+Open telemetry has been included to verify the performance of the composition. By default this is disabled, but with the following configuration, it can be enabled again:
 
 ```
 management:
